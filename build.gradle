@@ -1,0 +1,108 @@
+buildscript {
+    ext {
+        springBootVersion = '1.4.0.RELEASE'
+    }
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath("org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}")
+        /**
+         * just because https://github.com/docker-java/docker-java/issues/537
+         */
+        classpath 'com.kohlschutter.junixsocket:junixsocket-common:2.0.4'
+        classpath 'com.kohlschutter.junixsocket:junixsocket-native-common:2.0.4'
+    }
+}
+
+plugins {
+    id "com.bmuschko.docker-remote-api" version "3.0.1"
+}
+
+apply plugin: 'java'
+apply plugin: 'spring-boot'
+apply plugin: 'com.bmuschko.docker-remote-api'
+
+def serviceName = 'billy-time'
+version = '0.0.1-SNAPSHOT'
+
+import com.bmuschko.gradle.docker.tasks.image.Dockerfile
+
+jar {
+    baseName = serviceName
+}
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+    maven { url "https://jitpack.io" }
+}
+
+task copyJar(type: Copy) {
+    from "build/libs/${serviceName}-${project.version}.jar"
+    into 'build/docker/'
+    rename { String fileName ->
+        fileName.replace("-${project.version}", "")
+    }
+}
+
+task prepareDockerBuild(type: Dockerfile) {
+
+    dependsOn copyJar
+    destFile = project.file('build/docker/Dockerfile')
+    from 'dilgerm/rpi-app-base'
+    maintainer 'Martin Dilger <martin@effectivetrainings.de>'
+    addFile "${serviceName}.jar", "/app/application.jar"
+    entryPoint "java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/application.jar"
+}
+
+/**
+ * does not work on arm because https://github.com/kohlschutter/junixsocket
+ * does not seem to work on arm-architectures.
+ */
+//task docker(type: DockerBuildImage) {
+//    dependsOn createDockerfile
+//    dependsOn copyJar
+//    if (System.env.DOCKER_HOST) {
+//        url = "$System.env.DOCKER_HOST".replace("tcp", "https")
+//        if (System.env.DOCKER_CERT_PATH) {
+//            certPath = new File(System.env.DOCKER_CERT_PATH)
+//
+//        }
+//    } else {
+//        url = 'unix:///var/run/docker.sock'
+//    }
+//    inputDir = createDockerfile.destFile.parentFile
+//    tag = "dilgerm/$serviceName:$project.version"
+//}
+
+test {
+    useJUnit {
+        excludeCategories 'de.effectivetrainings.test.support.IntegrationTest'
+    }
+}
+
+task integrationTest(type: Test) {
+    useJUnit {
+        includeCategories 'de.effectivetrainings.test.support.IntegrationTest'
+    }
+}
+
+dependencies {
+    compile('org.springframework.boot:spring-boot-starter-actuator')
+    compile('org.springframework.boot:spring-boot-devtools')
+    compile('org.springframework.boot:spring-boot-starter-hateoas')
+    compile('org.projectlombok:lombok:1.16.6')
+    compile('org.springframework.boot:spring-boot-starter-web')
+    compile('org.springframework.boot:spring-boot-starter-data-jpa')
+    compile('org.flywaydb:flyway-core:3.1')
+
+    compile 'io.dropwizard.metrics:metrics-core:3.1.0'
+    compile 'io.dropwizard.metrics:metrics-jvm:3.1.0'
+    compile 'com.github.dilgerma:influxdb-reporter:0.0.6'
+
+    compile('com.h2database:h2:1.4.190')
+    testCompile('org.springframework.boot:spring-boot-starter-test')
+    testCompile('org.springframework.restdocs:spring-restdocs-mockmvc')
+}
